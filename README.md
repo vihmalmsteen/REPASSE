@@ -1,6 +1,8 @@
-# RECEBÍVEIS
+# 1. RECEBÍVEIS
 
 Este é um guia de recebíveis para fins de compreensão dos campos da tabela. Consulta mais completa possível no banco de dados para buscar atender a **todos os eventos** de maneira **escalável**. Foca totalmente na estrutura desenvolvida durante o 2º semestre de 2024 - portanto, edições anteriores não funcionarão, nem mesmo da plataforma antiga. O script da consulta pode ser visto no arquivo `recebiveis.sql`. Das colunas:
+
+### 1.1. Schema da tabela
 
 * **itemId:** Número do item dentro do pedido. Entenda-se por item um ticket, produto ou serviço.
 * **pedidoId:** Número do pedido. Pedido é um carrinho/checkout na plataforma.
@@ -77,23 +79,30 @@ R$ conveniência líquida parcelada = 165.26 / 2 = R$ 82.63
 * **custo de gateway:** Valor financeiro deduzido pela adquirente pelo processamento da compra. Compreende tanto custos fixos por processamento de checkout como percentuais. Este último, a taxa depende da forma de pagamento e, quando cartão, da bandeira e quantidade de parcelas.
 * **rebate:** Valor de cashback a ser dedolvido ao evento. Não está abarcado em 'repasse final'.
 
-## Exemplos
+### 1.2. Exemplos
 
 Com uma base de uma determinada edição XPTO exportada, algumas situações que podem ser facilmente respondidas via planilha e tabela dinâmica são exemplificadas abaixo.
 
-**Exemplo 1:** Gerando uma visão de lotes para observar quantos tickets e o repasse total de cada lote de um evento cadastrado:
+#### 1.2.1. Exemplo 1:
+
+Gerando uma visão de lotes para observar quantos tickets e o repasse total de cada lote de um evento cadastrado:
 
 ![exemplo-1](pictures/exemplo-1.png)
 
 Não há campo que diga o número do lote (lote 1, 2, 3, etc). Mas, por consenso, o preço cadastrado de um ticket define o seu lote, levando em consideração que para um mesmo evento > ticket > tipo do ticket o valor do lote seguinte é obrigatoriamente superior ao lote anterior. Pela imagem acima, o evento `XPTO C` somente vendeu `kit premium` do ingresso `5K - sem camisa` e possui lotes nos valores de R$ 129,90 e R$ 139,90, sendo primeiro e segundo lote, respectivamente.
 
-**Exemplo 2:** Quanto o produtor obteve financeiramente sobre as vendas (competência) mensalmente em cada prova:
+#### 1.2.2. Exemplo 2:
+
+Quanto o produtor obteve financeiramente sobre as vendas (competência) mensalmente em cada prova:
 
 ![exemplo-2](pictures/exemplo-2.png)
 
 Venda independe do momento de recebimento. Ajuda a diagnosticar o potencial do negócio. Caso um evento venda poucos tickets mas seus preços sejam muito altos, o faturamento também o será. O mesmo se pode dizer de eventos cujos preços sejam muito baixos, mas que tenham muitos tickets vendidos.
 
-**Exemplo 3:** O fluxo mensal de recebimentos (caixa real) separados por prova:
+
+#### 1.2.3. Exemplo 3:
+
+O fluxo mensal de recebimentos (caixa real) separados por prova:
 
 ![exemplo-3](pictures/exemplo-3.png)
 
@@ -101,8 +110,60 @@ O fluxo de recebimento considera o momento de depósito em conta. O capital é d
 
 Imagine que se vendeu um carro por R$ 30.000. No momento de compra houve algum recebimento desse montante? A resposta é depende. Caso tenha sido em 3 vezes, no momento da compra não se tem qualquer valor, e se terá R$ 10.000 cerca de 30 dias depois da data de compra.
 
-**Exemplo 4:** Quanto é de direito do produtor a receber hoje considerando que ele já tenha recebido 2 transferências de repasse nos valores de R$ 30.000 e R$ 170.000:
+#### 1.2.4. Exemplo 4:
+
+Quanto é de direito do produtor a receber hoje considerando que ele já tenha recebido 2 transferências de repasse nos valores de R$ 30.000 e R$ 170.000:
 
 ![exemplo-4](pictures/exemplo-4.png)
 
 Separando o repasse total pela classificação do recebível, facilmente se observa quanto ele tem de direito a receber. Mas, não há integração com bancos a ponto de consultar as transferências via banco de dados. Todavia, não importa quando ele recebeu os R$200.000 mas sim que ele os recebeu, sendo apenas tirar a diferença entre o total de direito hoje e o que já foi recebido.
+
+
+# 2. CUIDADOS 
+
+### 2.1. Plugins/serviços e cupons
+
+Teoricamente, extras não deveriam receber desconto de cupom. Contudo, não há impedimento para aplicar um cupom com desconto tão alto a ponto de zerar a cobrança de plugins dentro de um carrinho.
+
+![casos-1](pictures/casos-1.png) 
+
+Acima, um cupom `TESTANDO_PLUGIN` que dá direito a R$ 10.000 de desconto foi aplicado em um checkout com 3 tickets, 1 `Teste - ingresso 1` e 2 `Teste - ingresso 2`, e 1 plugin, `um plugin`. Caso no checkout houvesse alguma validação sobre os itens do carrinho para aplicar desconto somente nos tickets (o correto), o valor a ser pago em `Total` deveria ser no valor do próprio plugin de R$ 120 (sem taxa de conveniência, uma vez que não há cobranças sobre plugins), descontando somente R$ 836 dos tickets e conveniência respectiva (`checkout = [220 + 270 + 270] x 1.1`). Entretanto, o valor do checkout é nulo.
+
+![pictures/casos-2.png](pictures/casos-2.png)
+
+```
+id    |sessionid|trackingCode   |
+------+---------+---------------+
+486315|   726886|GO-PA2C17DEA1-4|
+```
+
+A modelagem construída do banco de dados não registra maiores detalhes do carrinho. Somente valores aglutinados de cada componente do checkout. Do mesmo pedido acima (726886), na tabela `checkoutsummary`:
+
+```sql
+select * from checkoutsummary where sessionid = 726886;
+```
+
+```
+id   |sessionId|totalAmount|ticketsValue|productsValue|discount|interest|freight|tax |ticketInsurance|ticketTransfer|
+-----+---------+-----------+------------+-------------+--------+--------+-------+----+---------------+--------------+
+74999|   726886|    -9082.0|       760.0|        120.0| 10000.0|     0.0|    0.0|38.0|            0.0|           0.0|
+```
+
+A informação financeira do checkout se resume a uma única linha, com os valores totais de tickets (`ticketsValue`), extras (`productsValue`), descontos de cupom (`discount`), etc. Não há informação sobre quanto foi pago nesse pedido referente a um ou outro ticket/extra, ou qual ticket está efetivamente abarcado em algum seguro (apenas que no pedido foi pago por algum seguro devido à `ticketInsurance` ser 0 ou não), ou qual item no carrinho recebeu desconto de cupom.
+
+Não somente, não há validação do valor checkout quando o desconto for superior ao valor do checkout (caso contrário, `totalAmount` deveria ser zero e não -R$ 9.082).
+
+O esperado, seria um `totalAmount` de R$ 120. Não um valor nulo muito - menos um valor negativo. De modo geral, situações assim geram um repasse maior, pois, via de regra, `discount` é rateado somente sobre os tickets, mantendo o valor dos extras intactos. Mas, fato é que a pessoa não pagou qualquer item. Portanto, **deve-se ter cuidado ao cadastrar cupons e aplicar o desconto no montante exato dos tickets e de sua taxa cobrada**.
+
+### 2.2. Plugins e serviços cadastrados como ticket no admin
+
+Em alguns cenários, a fim de atender a demandas específicas de produtores, cadastra-se produtos ou serviços em campos reservados para ingressos no backoffice. O que significa que a regra de cálculo aplicada sobre esses casos é de ingressos, impactando valores de conveniência, demais cobranças, etc. 
+
+![casos-3](pictures/casos-3.png)
+
+O mais coerente seria cadastrar tickets e, sobre eles, plugins. Mas, caso o método de cadastro de eventos de cross-selling sejam como o esboçado acima, a forma mais simples é corrigir discrepâncias no borderô, observando desvios na própria planilha exportada e alterando casos isolados.
+
+### 2.3. Cálculo de rebate para diferentes negociações
+
+A depender da negociação, o campo de rebate parametrizado não atenderá a certos tipos de acordos comerciais. O mais prático é apurar o rebate via planilha exportada. Casos de rebate considerando somente a dedução de impostos, por exemplo, basta abater impostos da conveniência na planilha e, do valor resultante, apurar o rebate.
+
