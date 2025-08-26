@@ -123,7 +123,7 @@ Separando o repasse total pela classificação do recebível, facilmente se obse
 
 ### 2.1. Plugins/serviços e cupons
 
-Teoricamente, extras não deveriam receber desconto de cupom. Contudo, não há impedimento para aplicar um cupom com desconto tão alto a ponto de zerar a cobrança de plugins dentro de um carrinho.
+Teoricamente, extras não deveriam receber desconto de cupom por conta de regras de negócio. Contudo, não há impedimento para aplicar um cupom com desconto tão alto a ponto de zerar a cobrança de plugins dentro de um carrinho.
 
 ![casos-1](pictures/casos-1.png) 
 
@@ -151,9 +151,18 @@ id   |sessionId|totalAmount|ticketsValue|productsValue|discount|interest|freight
 
 A informação financeira do checkout se resume a uma única linha, com os valores totais de tickets (`ticketsValue`), extras (`productsValue`), descontos de cupom (`discount`), etc. Não há informação sobre quanto foi pago nesse pedido referente a um ou outro ticket/extra, ou qual ticket está efetivamente abarcado em algum seguro (apenas que no pedido foi pago por algum seguro devido à `ticketInsurance` ser 0 ou não), ou qual item no carrinho recebeu desconto de cupom.
 
-Não somente, não há validação do valor checkout quando o desconto for superior ao valor do checkout (caso contrário, `totalAmount` deveria ser zero e não -R$ 9.082).
+Não somente, não há validação de valor do checkout quando o desconto for superior ao valor do checkout (caso contrário, `totalAmount` deveria ser zero e não -R$ 9.082). O esperado, seria um `totalAmount` de R$ 120. Não um valor nulo - muito menos um valor negativo. 
 
-O esperado, seria um `totalAmount` de R$ 120. Não um valor nulo muito - menos um valor negativo. De modo geral, situações assim geram um repasse maior, pois, via de regra, `discount` é rateado somente sobre os tickets, mantendo o valor dos extras intactos. Mas, fato é que a pessoa não pagou qualquer item. Portanto, **deve-se ter cuidado ao cadastrar cupons e aplicar o desconto no montante exato dos tickets e de sua taxa cobrada**.
+De modo geral, situações assim, com **cupom de desconto superior aos tickets e demais produtos, geram um repasse maior**, pois, via de regra, `discount` é rateado somente sobre os tickets mantendo o valor dos extras intactos. Mas, fato é que a pessoa do pedido teste acima não pagou qualquer item **por ausência de validação adequada de regras de negócio durante o checkout**.
+
+Outro ponto diz respeito às cortesias. Houve situações de criação de cupons de desconto para gerar cortesias em eventos cadastrados não destinados para cortesias. Para alguns destes eventos, havia a presença de plugins para compra. O meio mais simples de identificar uma cortesia é se houve um meio de pagamento - caso não possua, não ocorreu transação em gateways, sendo uma cortesia. 
+
+Caso a cortesia seja gerida via cupom, para um pedido com múltiplos tickets mas que tenha sido aplicado um cupom de cortesia válido para um único ticket, avaliar qual é o ticket de cortesia se torna inviável devido à estrutura de rateio proporcional ao valor de cada ticket. Neste cenário, dever-se-ia imputar a um ticket específico o valor do desconto. Para este cenário, o cupom de cortesia somente pode valer para um carrinho que contenha um único ingresso (há parametrização na plataforma para isso). Caso o evento contenha produtos extras, o cupom deve ser do tipo fixo no valor do ticket e acrescido da taxa de conveniência - caso fosse percentual, também eliminaria o valor de todos os extras colocados no carrinho.
+
+**Portanto, levando em consideração a modelagem e ausência de validação de regras de negócio:**
+
+* **Em eventos que não de cortesias e que não contenham extras:** Limitação apenas quando o desejo é emitir cortesias via cupom, que devem valer apenas para carrinhos com ticket único;
+* **Em eventos que não de cortesias e que contenham extras:** O ideal é cadastrar cupons de **desconto fixo** no montante exato dos tickets e de sua taxa cobrada.
 
 ### 2.2. Plugins e serviços cadastrados como ticket no admin
 
