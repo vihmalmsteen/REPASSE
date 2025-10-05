@@ -2,81 +2,110 @@ select
   weeks.`itemId`
 , weeks.`pedidoId`
 , weeks.`data de compra`
-, weeks.`data de compensação`
+, weeks.`data de compensação` as `data de recebimento`
 , if(weeks.`data de compensação` <= cast(now() as date), 'repassável', 'futuro') as `classificação do recebível`
-, weeksarrange.`semana` as `semana de compensação`
 , weeks.`edição`
 , weeks.`evento`
 , weeks.`categoria`
-, weeks.`prova`
+, case when weeks.`categoria` = 'extra'
+       then 'extra'
+       else weeks.`prova`
+       end as `prova`
 , weeks.`ticket`
 , weeks.`tipo do ticket`
 , weeks.`item fracionado`
-, weeks.`preço cadastrado`
+, case when weeks.`forma de pgto` = 'Cortesia'
+       then 0
+       else weeks.`preço cadastrado`
+       end as `preço cheio cadastrado`
 , weeks.`status do pedido`
 , weeks.`status do item`
 , weeks.`discriminação`
 , weeks.`ticket correlacionado`
 , weeks.`forma de pgto`
+, weeks.`bandeira`
 , weeks.`gateway`
 , weeks.`OR`
--- , weeks.`tipo de cobrança do gateway`
-, weeks.`taxa do gateway`
+, weeks.`custo de gateway`
+
+-- taxas
 , weeks.`taxa de conveniência`
-, weeks.`taxa de extras`
 , weeks.`taxa de emissão`
 , weeks.`fixo de emissão`
 , weeks.`taxa de reembolso`
 , weeks.`taxa de troca`
-, weeks.`taxa de rebate`
-, weeks.`taxa de impostos`
--- , weeks.`custo adicional`
--- , weeks.`aplicação do custo adicional`
--- , weeks.`tipo do custo adicional`
-, weeks.`parcelas`
-, weeks.`parcela`
-, weeks.`emissão percentual GD`
-, weeks.`emissão fixa GD`
-, weeks.`total do item parcelado`
-, weeks.`preço cadastrado parcelado`
-, weeks.`desconto parcelado`
-, weeks.`repasse de items`
-, weeks.`conveniência parcelada`
-, weeks.`troca parcelada`
-, weeks.`repasse parcelado de troca`
-, weeks.`troca GD parcelada`
-, weeks.`reembolso parcelado`
-, weeks.`repasse parcelado de reembolso`
-, weeks.`reembolso GD parcelado`
-, weeks.`juros parcelado`
-, weeks.`frete parcelado`
-, weeks.`repasse final`
-, weeks.`conveniência líquida parcelada`
-, weeks.`custos fixos de gateway`
-, weeks.`custo de gateway`
-, weeks.`rebate`
+
+-- parcelas
+, if(weeks.`forma de pgto` <> 'CreditCard', 0, weeks.`parcelas`) as `qtde de parcelas`
+, if(weeks.`forma de pgto` <> 'CreditCard', 0, weeks.`parcela`) as `nº da parcela`
+, if(weeks.`total do item parcelado` < 0, 0, weeks.`total do item parcelado`) as `valor da parcela` -- pago
+
+-- tickets e extras (itens)
+, case when weeks.`forma de pgto` = 'Cortesia' 
+       then 0
+       else weeks.`preço cadastrado parcelado`
+       end as `item bruto`
+, case when weeks.`forma de pgto` = 'Cortesia'
+       then 0
+       when weeks.`desconto parcelado` > weeks.`preço cadastrado parcelado`
+       then weeks.`preço cadastrado parcelado`
+       when weeks.`categoria` = 'extra' and weeks.`forma de pgto` = 'Cortesia'
+       then weeks.`preço cadastrado` / case when isnull(weeks.`parcelas`) or weeks.`parcelas` = 0 then 1 else weeks.`parcelas` end
+       else weeks.`desconto parcelado`
+       end as `desconto`
+, case when weeks.`forma de pgto` = 'Cortesia' 
+       then 0
+       else weeks.`preço cadastrado parcelado` - case when weeks.`forma de pgto` = 'Cortesia'
+                 then 0
+                 when weeks.`desconto parcelado` > weeks.`preço cadastrado parcelado`
+                 then weeks.`preço cadastrado parcelado`
+                 when weeks.`categoria` = 'extra' and weeks.`forma de pgto` = 'Cortesia'
+                 then weeks.`preço cadastrado` / case when isnull(weeks.`parcelas`) or weeks.`parcelas` = 0 then 1 else weeks.`parcelas` end
+                 else weeks.`desconto parcelado`
+                 end
+       end as `item líquido`
+, weeks.`conveniência parcelada` as `GD - conveniência`
+, weeks.`repasse de items` as `produtor - repasse de itens`     -- itens = ticket ou plugin
+
+-- receitas de emissão ou comissão
+, weeks.`emissão percentual GD` as `GD - emissão percentual`
+, weeks.`emissão fixa GD` as `GD - emissão fixa`
+
+-- reembolso/seguro
+, weeks.`reembolso parcelado` as `reembolso`
+, weeks.`reembolso GD parcelado` as `GD - reembolso`
+, weeks.`repasse parcelado de reembolso` as `produtor - repasse de reembolso`
+
+-- transferência de tickets
+, weeks.`troca parcelada` as `transferência de ticket`
+, weeks.`troca GD parcelada` as `GD - transferência`
+, weeks.`repasse parcelado de troca` as `repasse - transferência`
+
+-- que não afetam repasse (tudo da GD) -> juros e frete
+, weeks.`juros parcelado` as `GD - juros`
+, weeks.`frete parcelado` as `GD - frete`
+
+, weeks.`repasse final` as `produtor - repasse total`
+, weeksarrange.`semana` as `semana de recebimento`
 
 from (
 select 
   receitas_GD.*
-, (receitas_GD.`repasse de items` + receitas_GD.`repasse parcelado de reembolso` + receitas_GD.`repasse parcelado de troca`) - (receitas_GD.`emissão percentual GD` + receitas_GD.`emissão fixa GD`) as `repasse final`
+-- para editar o repasse final, inserir ou excluir campos
+, (
+  receitas_GD.`repasse de items` + 
+  receitas_GD.`repasse parcelado de reembolso` + 
+  receitas_GD.`repasse parcelado de troca`
+  ) - (
+  receitas_GD.`emissão percentual GD` + 
+  receitas_GD.`emissão fixa GD`
+  ) as `repasse final`
+
 , ifnull(gateCharges.`chargeType`, 'Cortesia') as `tipo de cobrança do gateway`
 , ifnull(gateCharges.`chargeAmount`, 0) as `taxa do gateway`
 
 -- custo de gateway: incide sobre o checkout inteiro
 , (receitas_GD.`total do item parcelado` * ifnull(gateCharges.`chargeAmount`, 0) + receitas_GD.`custos fixos de gateway`) as `custo de gateway`
-
--- conv liquida: (conveniência - custo de gateway - demais custos) x (1 - taxa de impostos) -> (se menor que zero, zero | 'demais custos' como custo de infra por item vendido)
-, case when (receitas_GD.`conveniência parcelada` - ((receitas_GD.`total do item parcelado` * ifnull(gateCharges.`chargeAmount`, 0) + receitas_GD.`custos fixos de gateway`)) - receitas_GD.`valor do custo adicional`) * (1 - receitas_GD.`custo adicional`) < 0
-       then 0
-       else (receitas_GD.`conveniência parcelada` - (receitas_GD.`total do item parcelado` * ifnull(gateCharges.`chargeAmount`, 0) + receitas_GD.`custos fixos de gateway`) - receitas_GD.`valor do custo adicional`) * (1 - receitas_GD.`custo adicional`) 
-       end as `conveniência líquida parcelada`
-
--- rebate: conveniência líquida parcelada x taxa de rebate -> (se menor que zero, zero)
-, case when ((receitas_GD.`conveniência parcelada` - (receitas_GD.`total do item parcelado` * ifnull(gateCharges.`chargeAmount`, 0) + receitas_GD.`custos fixos de gateway`) - receitas_GD.`valor do custo adicional`) * (1 - receitas_GD.`custo adicional`)) * receitas_GD.`taxa de rebate` < 0
-       then 0
-       else ((receitas_GD.`conveniência parcelada` - (receitas_GD.`total do item parcelado` * ifnull(gateCharges.`chargeAmount`, 0) + receitas_GD.`custos fixos de gateway`) - receitas_GD.`valor do custo adicional`) * (1 - receitas_GD.`custo adicional`)) * receitas_GD.`taxa de rebate` 
-       end as `rebate`
 
 from (
 select 
@@ -93,30 +122,36 @@ select
 from (
 select
   items.* 
-, 1 / cast(items.`parcelas` as double) as `item fracionado`
+, 1 / cast(if(items.`parcelas` = 0, 1, items.`parcelas`) as double) as `item fracionado`
 , if(items.`forma de pgto` <> 'CreditCard', 1, jt.`parcela`) as `parcela`
 , date_add(items.`data de compra`, interval jt.`parcela` * if(items.`forma de pgto` <> 'CreditCard', 0, jt.`parcela`) day) as `data de compensação`
-, (items.`tax` * items.`proporção nos tickets`) / items.`parcelas` as `conveniência parcelada`
-, (items.`ticketInsurance` * items.`proporção nos tickets`) / items.`parcelas` as `reembolso parcelado`
-, (items.`discount` * items.`proporção nos tickets`) / items.`parcelas` as `desconto parcelado`
-, (items.`interest` * items.`proporção no pedido`) / items.`parcelas` as `juros parcelado`
-, (items.`freight` * items.`proporção no pedido`) / items.`parcelas` as `frete parcelado`
-, (items.`ticketTransfer` * items.`proporção nos tickets`) / items.`parcelas` as `troca parcelada`
-, (items.`totalAmount` * items.`proporção no pedido`) / items.`parcelas` as `total do item parcelado`
+, (items.`tax` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `conveniência parcelada`
+, (items.`ticketInsurance` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `reembolso parcelado`
+, (items.`discount` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `desconto parcelado`
+, (items.`interest` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `juros parcelado`
+, (items.`freight` * items.`proporção nos extras`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `frete parcelado`
+, (items.`ticketTransfer` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `troca parcelada`
+-- , (items.`totalAmount` * items.`proporção no pedido`) / if(items.`parcelas` = 0, 1, items.`parcelas`) as `total do item parcelado`
+, case when items.`categoria` = 'ticket'
+       then ((ifnull(items.`ticketsValue`,0) + ifnull(items.`tax`,0) + ifnull(items.`ticketInsurance`,0) + ifnull(items.`interest`,0) + ifnull(items.`freight`,0) - ifnull(items.`discount`,0)) * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
+       when items.`categoria` = 'extra'
+       then (items.`productsValue` * items.`proporção nos extras`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
+       end as `total do item parcelado`
 
 , case when items.`categoria` = 'ticket'
-      then (items.`liquidTickets` * items.`proporção nos tickets`) / items.`parcelas`
-      else (items.`productsValue` * items.`proporção nos extras`) / items.`parcelas`
+      then (items.`liquidTickets` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
+      else (items.`productsValue` * items.`proporção nos extras`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
       end as `repasse de items`
 
 , case when items.`categoria` = 'ticket'
-      then (items.`ticketsValue` * items.`proporção nos tickets`) / items.`parcelas`
-      else (items.`productsValue` * items.`proporção nos extras`) / items.`parcelas`
+      then (items.`ticketsValue` * items.`proporção nos tickets`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
+      else (items.`productsValue` * items.`proporção nos extras`) / if(items.`parcelas` = 0, 1, items.`parcelas`)
       end as `preço cadastrado parcelado`
 
 from (
 select 
-  checkoutparticipant.`id` as `itemId`
+  'tickets' as `query`
+, checkoutparticipant.`id` as `itemId`
 , checkoutsession.`id` as `pedidoId`
 , cast(date_add(checkoutsession.`createdat`, interval -3 hour) as date) as `data de compra`
 , eventcomplement.`globalevent` as `edição`
@@ -127,71 +162,91 @@ select
 , eventticketbatchpricetype.`name` as `tipo do ticket`
 , checkoutsession.`status` as `status do pedido`
 , ifnull(checkoutpayment.`paymentoption`, 'Cortesia') as `forma de pgto`
-, ifnull(checkoutpayment.`installments`, 1) as `parcelas`
+, ifnull(checkoutpayment.`installments`, 0) as `parcelas`
 , if(isnull(installmentsrange.`installmentsArray`), '[0]', installmentsrange.`installmentsArray`) as `installmentsArray`
 , ifnull(if(checkoutpayment.`paymentOption` = 'PayPal', 'PayPal', paymentprovider.`name`), 'Cortesia') as `gateway`
 , case when checkoutpayment.`paymentOption` = 'PayPal' 
        then checkoutpaypaldetails.`captureId` 
        else checkoutsession.`providerOrderId` end as `OR`
 , event.`taxaevent` / 100 as `taxa de conveniência`
-, 0 as `taxa de extras`
-, eventcomplement.`emissionChargePercent` / 100 as `taxa de emissão`
-, eventcomplement.`emissionChargeFixed` as `fixo de emissão`
-, eventcomplement.`comissionSecurityPerc` / 100 as `taxa de reembolso`
-, eventcomplement.`transferPercent` / 100 as `taxa de troca`
+, case when eventticketcomplement.`emissionChargePercent` = 0 or eventticketcomplement.`emissionChargePercent` is null 
+       then eventcomplement.`emissionChargePercent` / 100
+       else eventticketcomplement.`emissionChargePercent` / 100 end as `taxa de emissão`
+, case when eventticketcomplement.`emissionChargeFixed` = 0 or eventticketcomplement.`emissionChargeFixed` is null
+       then eventcomplement.`emissionChargeFixed`
+       else eventticketcomplement.`emissionChargeFixed` end as `fixo de emissão`
+, case when eventticketcomplement.`comissionSecurityPerc` = 0 or eventticketcomplement.`comissionSecurityPerc` is null
+       then eventcomplement.`comissionSecurityPerc` / 100
+       else eventticketcomplement.`comissionSecurityPerc` / 100 end as `taxa de reembolso`
+, case when eventticketcomplement.`transferPercent` = 0 or eventticketcomplement.`transferPercent` is null
+       then eventcomplement.`transferPercent` / 100
+       else eventticketcomplement.`transferPercent` / 100 end as `taxa de troca`
 , eventcomplement.`rebateTax` / 100 as `taxa de rebate`
 , eventcomplement.`taxRate` / 100 as `taxa de impostos`
-
-, ifnull(eventAdditionalCosts.`label`, 'não aplicável') as `custo adicional`
-, ifnull(eventAdditionalCosts.`applyOn`, 'não aplicável') as `aplicação do custo adicional`
-, ifnull(eventAdditionalCosts.`type`, 'não aplicável') as `tipo do custo adicional`
-, case when eventAdditionalCosts.`type` is null
-       then 0
-       when eventAdditionalCosts.`type` = 'fixed'
-       then ifnull(eventAdditionalCosts.`value`, 0) / ifnull(checkoutpayment.`installments`, 1)
-       when eventAdditionalCosts.`type` = 'percent'
-       then ifnull(eventAdditionalCosts.`value`, 0) / 100
-       else ifnull(eventAdditionalCosts.`value`, 0)
-       end as `valor do custo adicional`
 , ifnull(ifnull(pagarme_fixed_charges.`chargeAmountFixed`, 0) / ifnull(checkoutpayment.`installments`, 1), 0) as `custos fixos de gateway`
-, if(isnull(checkoutsummary.`totalAmount`) or checkoutsummary.`totalAmount` < 0, 0, checkoutsummary.`totalAmount`) as `totalAmount`
+-- SUMMARY TICKETS
+, case when isnull(checkoutsummary.`totalAmount`)
+       then 0
+       when checkoutsummary.`totalAmount` <= 0 or checkoutpayment.`paymentoption` is null
+       then 0
+       else checkoutsummary.`totalAmount`
+       end as `totalAmount`
 , case when checkoutsummary.`ticketTransfer` > 0
        then 0
        else ifnull(checkoutsummary.`ticketsValue`,0) 
        end as `ticketsValue`
 , case when checkoutsummary.`ticketTransfer` > 0
        then 0
-       else if(ifnull(checkoutsummary.`ticketsValue`,0) + ifnull(checkoutsummary.`tax`,0) <= ifnull(checkoutsummary.`discount`,0), 0, ifnull(checkoutsummary.`ticketsValue`,0) - ifnull(checkoutsummary.`discount`,0)) 
+       when checkoutpayment.`paymentoption` is null
+       then 0
+       else if(
+           ifnull(checkoutsummary.`ticketsValue`,0) + ifnull(checkoutsummary.`tax`,0) <= ifnull(checkoutsummary.`discount`,0),
+           0,
+           ifnull(checkoutsummary.`ticketsValue`,0) - ifnull(checkoutsummary.`discount`,0)
+           )
        end as `liquidTickets`
 , 0 as `productsValue`
 , case when checkoutsummary.`ticketTransfer` > 0
        then 0
-       else if(ifnull(checkoutsummary.`ticketsValue`,0) + ifnull(checkoutsummary.`tax`,0) <= ifnull(checkoutsummary.`discount`,0), ifnull(checkoutsummary.`discount`,0), ifnull(checkoutsummary.`discount`,0)) 
+       when ifnull(checkoutsummary.`totalAmount`,0) >= 0
+       then ifnull(checkoutsummary.`discount`,0)
+       else checkoutsummary.`ticketsValue` + checkoutsummary.`interest` + checkoutsummary.`freight` + checkoutsummary.`tax` + checkoutsummary.`ticketInsurance`
        end as `discount`
 , case when checkoutsummary.`ticketTransfer` > 0
+       then 0
+       when ifnull(checkoutsummary.`totalAmount`,0) <= 0
        then 0
        else ifnull(checkoutsummary.`interest`,0) 
        end as `interest`
 , case when checkoutsummary.`ticketTransfer` > 0
        then 0 
+       when ifnull(checkoutsummary.`totalAmount`,0) <= 0
+       then 0
        else ifnull(checkoutsummary.`freight`,0) 
        end as `freight`
 , case when checkoutsummary.`ticketTransfer` > 0 
        then 0 
+       when ifnull(checkoutsummary.`totalAmount`,0) <= 0
+       then 0
        else ifnull(checkoutsummary.`tax`,0) 
        end as `tax`
 , case when checkoutsummary.`ticketTransfer` > 0
+       then 0
+       when ifnull(checkoutsummary.`totalAmount`,0) <= 0
        then 0
        else ifnull(checkoutsummary.`ticketInsurance`,0) 
        end as `ticketInsurance`
 , ifnull(checkoutsummary.`ticketTransfer`,0) as `ticketTransfer`
 , case when checkoutsummary.`ticketTransfer` > 0
        then event.`ticketTransferValue`
-       else eventticketbatchprice.`price` 
+       else eventticketbatchprice.`price`
        end as `preço cadastrado`
 , ifnull(eventticketbatchprice.`price` / checkoutsummary.`ticketsValue`,0) as `proporção nos tickets`
 , 0 as `proporção nos extras`
-, ifnull(eventticketbatchprice.`price` / (ifnull(checkoutsummary.`ticketsValue`,0) + ifnull(checkoutsummary.`productsValue`,0)),0) `proporção no pedido`
+, case when ifnull(eventticketbatchprice.`price` / ifnull(checkoutsummary.`totalAmount`,0),0) < 0
+       then 0
+       else ifnull(eventticketbatchprice.`price` / ifnull(checkoutsummary.`totalAmount`,0),0)
+       end as `proporção no pedido`
 , case when checkoutorderticketpartialcancel.`reason` = 'Troca de Titularidade'
        then 'transferido'
        when checkoutsummary.`ticketTransfer` > 0
@@ -255,12 +310,6 @@ from checkoutparticipant
     left join checkoutpaypaldetails                 on checkoutpaypaldetails.`sessionId` = checkoutsession.`id`
     
     left join (
-        select * 
-            from eventAdditionalCosts 
-        where label = 'custo de infra'
-    ) as eventAdditionalCosts on eventAdditionalCosts.`eventid` = event.`id`
-    
-    left join (
         select 
           checkoutsession.`id` as `sessionId`
         , customerpaymentprovidercard.`cardId`
@@ -299,11 +348,11 @@ from checkoutparticipant
     
 where 1 = 1
   and checkoutsession.`status` = 'Paid'
-  and ( 
+  and (
     checkoutorderticketpartialcancel.`reason` is null or
-    checkoutorderticketpartialcancel.`reason` in ('Troca de Titularidade', 'Cancelamento Reembolsável')                   -- 'Cancelamento Reembolsável', 'Cancelamento (7 dias)', 'Arrependimento', 'Troca de Titularidade', 'Desistência'
+    checkoutorderticketpartialcancel.`reason` in ('Troca de Titularidade', 'Cancelamento Reembolsável')    -- opt para 'another option' -> 'Cancelamento Reembolsável', 'Cancelamento (7 dias)', 'Desistência'
     )
-  and eventcomplement.`globalevent` = 'edição XPTO'
+  and {{edicao}}
   and {{pedidoId}}
   and {{eventId}}
   and {{participanteId}}
@@ -314,7 +363,8 @@ union all
 
 
 select 
-  checkoutproductcomplement.`id` as `itemId`
+  'extras' as `query`
+, checkoutproductcomplement.`id` as `itemId`
 , checkoutsession.`id` as `pedidoId`
 , cast(date_add(checkoutsession.`createdat`, interval -3 hour) as date) as `data de compra`
 , eventcomplement.`globalevent` as `edição`
@@ -325,55 +375,66 @@ select
 , productmodel.`name` as `tipo do ticket`
 , checkoutsession.`status` as `status do pedido`
 , ifnull(checkoutpayment.`paymentoption`, 'Cortesia') as `forma de pgto`
-, checkoutpayment.`installments` as `parcelas`
-, installmentsrange.`installmentsArray`
-, if(checkoutpayment.`paymentOption` = 'PayPal', 'PayPal', paymentprovider.`name`) as `gateway`
+, ifnull(checkoutpayment.`installments`, 0) as `parcelas`
+, if(isnull(installmentsrange.`installmentsArray`), '[0]', installmentsrange.`installmentsArray`) as `installmentsArray`
+, ifnull(if(checkoutpayment.`paymentOption` = 'PayPal', 'PayPal', paymentprovider.`name`), 'Cortesia') as `gateway`
 , case when checkoutpayment.`paymentOption` = 'PayPal' 
        then checkoutpaypaldetails.`captureId` 
        else checkoutsession.`providerOrderId` end as `OR`
 , event.`taxaevent` / 100 as `taxa de conveniência`
-, eventcomplement.`productChargePercent` / 100 as `taxa de extras`
-, eventcomplement.`emissionChargePercent` / 100 as `taxa de emissão`
-, 0 as `fixo de emissão`
+, case when productcomplementmanual.`productChargePercent` is null or productcomplementmanual.`productChargePercent` = 0
+       then eventcomplement.`productChargePercent` / 100
+       else productcomplementmanual.`productChargePercent` / 100 end as `taxa de emissão`
+, case when productcomplementmanual.`productChargeFixed` is null or productcomplementmanual.`productChargeFixed` = 0
+       then eventcomplement.`productChargeFixed`
+       else productcomplementmanual.`productChargeFixed` end as `fixo de emissão`
 , 0 as `taxa de reembolso`
 , 0 as `taxa de troca`
 , 0 as `taxa de rebate`
 , eventcomplement.`taxRate` / 100 as `taxa de impostos`
-, 'não aplicável' as `custo adicional`              -- extra não tem conv
-, 'não aplicável' as `aplicação do custo adicional` -- extra não tem conv
-, 'não aplicável' as `tipo do custo adicional`      -- extra não tem conv
-, 0 as `valor do custo adicional`                   -- extra não tem conv
 , ifnull(ifnull(pagarme_fixed_charges.`chargeAmountFixed`, 0) / ifnull(checkoutpayment.`installments`, 1), 0) as `custos fixos de gateway`
-, ifnull(checkoutsummary.`totalAmount`,0) as `totalAmount`
+-- SUMMARY EXTRAS
+, case when isnull(checkoutpayment.`paymentoption`) or isnull(checkoutsummary.`totalAmount`) or checkoutsummary.`totalAmount` <= 0
+       then 0
+       else checkoutsummary.`totalAmount`
+       end as `totalAmount`
 , 0 as `ticketsValue`
 , 0 as `liquidTickets`
-, ifnull(checkoutsummary.`productsValue`,0) as `productsValue`
+, case when isnull(checkoutpayment.`paymentoption`)
+       then 0 
+       else ifnull(checkoutsummary.`productsValue`,0) 
+       end as `productsValue`
 , 0 as `discount`
-, ifnull(checkoutsummary.`interest`,0) as `interest`
-, ifnull(checkoutsummary.`freight`,0) as `freight`
+, case when isnull(checkoutpayment.`paymentoption`) 
+       then 0 
+       else ifnull(checkoutsummary.`interest`,0)
+       end as `interest`
+, case when isnull(checkoutpayment.`paymentoption`)
+       then 0 
+       else ifnull(checkoutsummary.`freight`,0) 
+       end as `freight`
 , 0 as `tax`
 , 0 as `ticketInsurance`
 , 0 as `ticketTransfer`
 , productsize.`price` as `preço cadastrado`
 , 0 as `proporção nos tickets`
 , ifnull(productsize.`price` / checkoutsummary.`productsValue`,0) as `proporção nos extras`
-, ifnull(productsize.`price` / (ifnull(checkoutsummary.`ticketsValue`,0) + ifnull(checkoutsummary.`productsValue`,0)),0) `proporção no pedido`
-
+, case when ifnull(productsize.`price` / ifnull(checkoutsummary.`totalAmount`,0),0) < 0
+       then 0 
+       else ifnull(productsize.`price` / ifnull(checkoutsummary.`totalAmount`,0),0) 
+       end as `proporção no pedido`
 , case when checkoutorderproductpartialcancel.`reason` = 'Troca de Titularidade'
        then 'aprovado'
        when checkoutorderproductpartialcancel.`reason` is null
        then 'aprovado'
        else 'cancelado' end as `status do item`
-
 , case when checkoutorderproductpartialcancel.`reason` = 'Troca de Titularidade'
        then 'aprovado'
        when checkoutorderproductpartialcancel.`reason` is null
        then 'aprovado'
        else checkoutorderproductpartialcancel.`reason`
        end as `discriminação`
-
 , null as `ticket correlacionado`
-
 , case when checkoutpayment.`paymentOption` is null
        then 'Cortesia'
        when checkoutpayment.`paymentOption` <> 'CreditCard' 
@@ -441,11 +502,11 @@ from checkoutproductcomplement
 
 where 1 = 1
   and checkoutsession.`status` = 'Paid'
-  and ( 
+  and (
     checkoutorderproductpartialcancel.`reason` is null or 
-    checkoutorderproductpartialcancel.`reason` in ('another option')                                                       -- 'Cancelamento Reembolsável', 'Cancelamento (7 dias)', 'Desistência'
+    checkoutorderproductpartialcancel.`reason` in ('another option')    -- opt para 'another option' -> 'Cancelamento Reembolsável', 'Cancelamento (7 dias)', 'Desistência'
       )
-  and eventcomplement.`globalevent` = 'edição XPTO'
+  and {{edicao}}
   and {{pedidoId}}
   and {{eventId}}
   and {{extraId}}
@@ -455,9 +516,10 @@ where 1 = 1
 
 join json_table( items.`installmentsArray`, '$[*]' columns (`parcela` int path '$') ) as jt
 
+order by items.`pedidoID` desc
+
 ) as parcelas
 ) as receitas_GD
-
 
 left join gateCharges on 
     concat(gateCharges.`gateway`, '_', gateCharges.`negotiationNumber`, '_', gateCharges.`chargeOn`, '_', gateCharges.`cardBrand`, '_', gateCharges.`installments`) = 
@@ -466,3 +528,8 @@ left join gateCharges on
 ) as weeks
 
 left join weeksarrange on weeksarrange.`data` = weeks.`data de compensação`
+
+where 1=1
+[[and weeks.`data de compensação` between {{data_compensacao_ini}} and {{data_compensacao_fini}}]]
+[[and weeks.`data de compra` between {{data_compra_ini}} and {{data_compra_fini}}]]
+[[and if(weeks.`data de compensação` <= cast(now() as date), 'repassável', 'futuro') = {{classificacao}}]]
