@@ -116,3 +116,8 @@ Vendo o total de de direito do produtor, separando entre repassável e futuro:
 
 ![exemplo_2](pictures/ex2.png)
 
+**Exemplo 3:** 
+
+Quantidades de cortesias e seus custos de emissão para o produtor:
+
+![exemplo_3](pictures/ex3.png)
