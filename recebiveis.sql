@@ -79,7 +79,7 @@ select
 -- transferência de tickets
 , weeks.`troca parcelada` as `transferência de ticket`
 , weeks.`troca GD parcelada` as `GD - transferência`
-, weeks.`repasse parcelado de troca` as `repasse - transferência`
+, weeks.`repasse parcelado de troca` as `produtor - transferência`
 
 -- que não afetam repasse (tudo da GD) -> juros e frete
 , weeks.`juros parcelado` as `GD - juros`

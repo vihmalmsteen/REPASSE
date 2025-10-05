@@ -92,7 +92,7 @@ A razão para haver tabelas com a mesma informação é poder controlar se um pl
 | produtor - repasse de reembolso | Montante de direito do produtor referente ao valor de reembolso;                                                                                      |
 | transferência de ticket         | Pago pela transferência do ingresso (não há desconto de cupom nem mesmo parcelamento em transferências);                                              |
 | GD - transferência              | Montante da GoDream referente às transferências de ingressos;                                                                                         |
-| repasse - transferência         | Montande de direito do produtor referente às transferências de ingressos;                                                                             |
+| produtor - transferência        | Montande de direito do produtor referente às transferências de ingressos;                                                                             |
 | GD - juros                      | Juros de compras no cartão de crédito. Integralmente da GoDream;                                                                                      |
 | GD - frete                      | Valor de frete de produtos extras. Integralmente da GoDream;                                                                                          |
 | produtor - repasse total        | Montante do produtor, englobando todos os grupos de valores anteriores de direito dele;                                                               |
